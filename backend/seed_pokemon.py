@@ -2,42 +2,43 @@
 
 from database import initialize_database, close_database_connection
 from pokemon.models import Pokemon
+from shared.constants import PokemonType
 
 SEED_POKEMON = [
     {
         "pokemon_id": 1,
         "pokemon_name": "Bulbasaur",
-        "types": ["Grass", "Poison"],
+        "types": [PokemonType.Grass.value, PokemonType.Poison.value],
         "stats": {"hp": 45, "attack": 49, "defense": 49, "speed": 45},
     },
     {
         "pokemon_id": 4,
         "pokemon_name": "Charmander",
-        "types": ["Fire"],
+        "types": [PokemonType.Fire.value],
         "stats": {"hp": 39, "attack": 52, "defense": 43, "speed": 65},
     },
     {
         "pokemon_id": 6,
         "pokemon_name": "Charizard",
-        "types": ["Fire", "Flying"],
+        "types": [PokemonType.Fire.value, PokemonType.Flying.value],
         "stats": {"hp": 78, "attack": 84, "defense": 78, "speed": 100},
     },
     {
         "pokemon_id": 7,
         "pokemon_name": "Squirtle",
-        "types": ["Water"],
+        "types": [PokemonType.Water.value],
         "stats": {"hp": 44, "attack": 48, "defense": 65, "speed": 43},
     },
     {
         "pokemon_id": 9,
         "pokemon_name": "Blastoise",
-        "types": ["Water"],
+        "types": [PokemonType.Water.value],
         "stats": {"hp": 79, "attack": 83, "defense": 100, "speed": 78},
     },
     {
         "pokemon_id": 25,
         "pokemon_name": "Pikachu",
-        "types": ["Electric"],
+        "types": [PokemonType.Electric.value],
         "stats": {"hp": 35, "attack": 55, "defense": 40, "speed": 90},
     },
 ]

@@ -5,12 +5,25 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from random import randint
 from typing import Any, AsyncIterator
+from shared.constants import PokemonType
 
 TYPE_EFFECTIVENESS: dict[str, set[str]] = {
-    "fire": {"grass", "ice", "bug"},
-    "water": {"fire", "ground", "rock"},
-    "grass": {"water", "ground", "rock"},
-    "electric": {"water", "flying"},
+    PokemonType.Fire.key: {
+        PokemonType.Grass.key,
+        PokemonType.Ice.key,
+        PokemonType.Bug.key,
+    },
+    PokemonType.Water.key: {
+        PokemonType.Fire.key,
+        PokemonType.Ground.key,
+        PokemonType.Rock.key,
+    },
+    PokemonType.Grass.key: {
+        PokemonType.Water.key,
+        PokemonType.Ground.key,
+        PokemonType.Rock.key,
+    },
+    PokemonType.Electric.key: {PokemonType.Water.key, PokemonType.Flying.key},
 }
 
 
@@ -23,10 +36,13 @@ class BattlePokemon:
 
 
 def to_battle_pokemon(payload: dict[str, Any]) -> BattlePokemon:
+    # Normalize incoming type strings to lowercase keys used by TYPE_EFFECTIVENESS
+    raw_types = payload.get("types", [])
+    normalized_types = [PokemonType.normalize(t).lower() for t in raw_types]
     return BattlePokemon(
         pokemon_id=payload["pokemon_id"],
         pokemon_name=payload["pokemon_name"],
-        types=payload["types"],
+        types=normalized_types,
         stats=payload["stats"],
     )
 
