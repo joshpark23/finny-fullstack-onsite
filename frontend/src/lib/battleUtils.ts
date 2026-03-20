@@ -127,17 +127,22 @@ export function mergeBattleEvents(
     existing: BattleEvent[],
     incoming: BattleEvent[]
 ): BattleEvent[] {
-    const eventMap = new Map<string, BattleEvent>()
-
-    for (const event of existing) {
-        eventMap.set(eventKey(event), event)
+    if (incoming.length === 0) {
+        return existing
     }
+
+    const eventMap = new Map(existing.map(event => [eventKey(event), event]))
+    let changed = false
 
     for (const event of incoming) {
-        eventMap.set(eventKey(event), event)
+        const key = eventKey(event)
+        if (!eventMap.has(key)) {
+            changed = true
+        }
+        eventMap.set(key, event)
     }
 
-    return Array.from(eventMap.values())
+    return changed ? Array.from(eventMap.values()) : existing
 }
 
 export function parseBattleEventsFromStream(data: string): BattleEvent[] {

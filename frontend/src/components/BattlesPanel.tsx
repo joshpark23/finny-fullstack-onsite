@@ -1,7 +1,15 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import {
+    type FormEvent,
+    useCallback,
+    useEffect,
+    useMemo,
+    useState
+} from 'react'
+
+import type { BattleEvent } from '@/lib/api/battles'
 
 import { useBattleStream } from '@/hooks/useBattleStream'
 import { usePokemonAnimations } from '@/hooks/usePokemonAnimations'
@@ -11,10 +19,15 @@ import {
     type CreateBattleRequest,
     listBattles
 } from '@/lib/api/battles'
-import { createIdempotencyKey, eventKey, getNextSelectedBattleId } from '@/lib/battleUtils'
+import {
+    createIdempotencyKey,
+    getNextSelectedBattleId
+} from '@/lib/battleUtils'
 
+import { BattleArena } from './BattleArena'
+import { BattleEventsList } from './BattleEventsList'
+import { BattleSelector } from './BattleSelector'
 import { PokemonSelectors } from './PokemonSelectors'
-import { Card } from './ui/card'
 import {
     Dialog,
     DialogContent,
@@ -24,8 +37,6 @@ import {
     DialogTitle,
     DialogTrigger
 } from './ui/dialog'
-
-
 
 export default function BattlesPanel() {
     const { data: allPokemon = [] } = usePokemonCatalog()
@@ -59,24 +70,27 @@ export default function BattlesPanel() {
     const [pokemon2Input, setPokemon2Input] = useState('')
     const [createFormError, setCreateFormError] = useState<null | string>(null)
 
-    const {
-        appendEventsForBattle,
-        eventsByBattleId,
-        isStreaming,
-        streamError
-    } = useBattleStream({
-        onBattleEvents: incomingEvents => {
+    const handleBattleEvents = useCallback(
+        (incomingEvents: BattleEvent[]) => {
             for (const event of incomingEvents) {
                 const actorId = event.actor_pokemon_id
                 if (!actorId) continue
                 triggerAnimation(actorId)
             }
         },
-        onStreamDone: () => {
-            void queryClient.invalidateQueries({ queryKey: ['battles'] })
-        },
-        selectedBattleId
-    })
+        [triggerAnimation]
+    )
+
+    const handleStreamDone = useCallback(() => {
+        void queryClient.invalidateQueries({ queryKey: ['battles'] })
+    }, [queryClient])
+
+    const { appendEventsForBattle, eventsByBattleId, isStreaming, streamError } =
+        useBattleStream({
+            onBattleEvents: handleBattleEvents,
+            onStreamDone: handleStreamDone,
+            selectedBattleId
+        })
 
     const createBattleMutation = useMutation({
         mutationFn: (payload: CreateBattleRequest) => createBattle(payload),
@@ -110,7 +124,9 @@ export default function BattlesPanel() {
     ])
 
     const latestEvents = useMemo(() => {
-        const events = selectedBattleId ? (eventsByBattleId[selectedBattleId] ?? []) : []
+        const events = selectedBattleId
+            ? (eventsByBattleId[selectedBattleId] ?? [])
+            : []
         return [...events].sort((a, b) => b.sequence - a.sequence)
     }, [eventsByBattleId, selectedBattleId])
 
@@ -129,8 +145,12 @@ export default function BattlesPanel() {
     const leftIsWinner = winnerId !== null && leftId === winnerId
     const rightIsWinner = winnerId !== null && rightId === winnerId
 
-    const leftName = leftId ? (pokemonById.get(leftId)?.name ?? 'Pokemon 1') : 'Pokemon 1'
-    const rightName = rightId ? (pokemonById.get(rightId)?.name ?? 'Pokemon 2') : 'Pokemon 2'
+    const leftName = leftId
+        ? (pokemonById.get(leftId)?.name ?? 'Pokemon 1')
+        : 'Pokemon 1'
+    const rightName = rightId
+        ? (pokemonById.get(rightId)?.name ?? 'Pokemon 2')
+        : 'Pokemon 2'
 
     const handleCreateBattleSubmit = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault()
@@ -190,13 +210,10 @@ export default function BattlesPanel() {
                             <DialogHeader>
                                 <DialogTitle>Create battle</DialogTitle>
                                 <DialogDescription>
-                                    Enter two Pokemon IDs to start a battle.
+                                    Select two pokemon to start a battle!
                                 </DialogDescription>
                             </DialogHeader>
-                            <form
-                                className="space-y-4"
-                                onSubmit={handleCreateBattleSubmit}
-                            >
+                            <form className="space-y-4" onSubmit={handleCreateBattleSubmit}>
                                 <PokemonSelectors
                                     pokemon1Input={pokemon1Input}
                                     pokemon2Input={pokemon2Input}
@@ -204,9 +221,7 @@ export default function BattlesPanel() {
                                     setPokemon2Input={setPokemon2Input}
                                 />
                                 {createFormError ? (
-                                    <div className="text-sm text-red-500">
-                                        {createFormError}
-                                    </div>
+                                    <div className="text-sm text-red-500">{createFormError}</div>
                                 ) : null}
                                 <DialogFooter>
                                     <button
@@ -221,113 +236,35 @@ export default function BattlesPanel() {
                                         disabled={createBattleMutation.isPending}
                                         type="submit"
                                     >
-                                        {createBattleMutation.isPending
-                                            ? 'Creating...'
-                                            : 'Create'}
+                                        {createBattleMutation.isPending ? 'Creating...' : 'Create'}
                                     </button>
                                 </DialogFooter>
                             </form>
                         </DialogContent>
                     </Dialog>
                 </div>
-
-                <select
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none"
-                    disabled={isBattlesLoading || sortedBattles.length === 0}
-                    id="selected-battle"
-                    onChange={event => setSelectedBattleId(event.target.value)}
-                    value={selectedBattleId ?? ''}
-                >
-                    {selectedBattleId && !selectedBattleExists ? (
-                        <option value={selectedBattleId}>
-                            {`${selectedBattleId} • Newly created`}
-                        </option>
-                    ) : null}
-                    {sortedBattles.map(battle => (
-                        <option key={battle.battle_id} value={battle.battle_id}>
-                            {`Status: ${battle.status} • Winner: ${battle.winner_name} • ${new Date(battle.created_at).toLocaleString()}`}
-                        </option>
-                    ))}
-                </select>
+                <BattleSelector
+                    battles={sortedBattles}
+                    isLoading={isBattlesLoading}
+                    selectedBattleExists={selectedBattleExists}
+                    selectedBattleId={selectedBattleId}
+                    setSelectedBattleId={setSelectedBattleId}
+                />
             </div>
-
-            <div className="rounded-xl border bg-muted p-6">
-                <div className="h-56 w-full rounded-lg bg-transparent">
-                    <div className="grid h-56 grid-cols-2 gap-6">
-                        <div
-                            className={`flex items-center justify-center rounded-lg p-4 transition-colors ${leftIsWinner ? 'border border-green-300 bg-green-50' : ''
-                                }`}
-                        >
-                            <div className="flex items-center justify-center">
-                                <div
-                                    className={`flex h-36 w-36 items-center justify-center rounded-full bg-white px-3 text-center text-base font-semibold shadow-md transition-transform duration-300 ${leftId && animatingIds.has(leftId)
-                                        ? 'translate-x-10 -translate-y-4 scale-110'
-                                        : ''
-                                        }`}
-                                >
-                                    {leftName}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div
-                            className={`flex items-center justify-center rounded-lg p-4 transition-colors ${rightIsWinner ? 'border border-green-300 bg-green-50' : ''
-                                }`}
-                        >
-                            <div className="flex items-center justify-center">
-                                <div
-                                    className={`flex h-36 w-36 items-center justify-center rounded-full bg-white px-3 text-center text-base font-semibold shadow-md transition-transform duration-300 ${rightId && animatingIds.has(rightId)
-                                        ? '-translate-x-10 -translate-y-4 scale-110'
-                                        : ''
-                                        }`}
-                                >
-                                    {rightName}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <section className="space-y-3">
-                <h2 className="text-lg font-semibold">Battle Events</h2>
-
-                {isBattlesLoading || isStreaming ? (
-                    <div className="text-sm text-muted-foreground">
-                        Loading battle events...
-                    </div>
-                ) : null}
-
-                {battlesError || streamError || createBattleMutation.error ? (
-                    <div className="text-sm text-red-500">
-                        Failed to load battle events.
-                    </div>
-                ) : null}
-
-                {!isBattlesLoading &&
-                    !isStreaming &&
-                    !battlesError &&
-                    !streamError &&
-                    latestEvents.length === 0 ? (
-                    <div className="text-sm text-muted-foreground">
-                        No battle events available yet.
-                    </div>
-                ) : null}
-
-                <div className="space-y-2">
-                    {latestEvents.map(event => (
-                        <Card className="gap-2 px-4 py-3" key={eventKey(event)}>
-                            <div className="text-sm font-medium">{event.message}</div>
-                            <div className="text-xs text-muted-foreground">
-                                {event.event_type} • {new Date(event.created_at).toLocaleString()}
-                            </div>
-                        </Card>
-                    ))}
-                </div>
-            </section>
+            <BattleArena
+                animatingIds={animatingIds}
+                leftId={leftId}
+                leftIsWinner={leftIsWinner}
+                leftName={leftName}
+                rightId={rightId}
+                rightIsWinner={rightIsWinner}
+                rightName={rightName}
+            />
+            <BattleEventsList
+                events={latestEvents}
+                hasError={!!(battlesError ?? streamError ?? createBattleMutation.error)}
+                isLoading={isBattlesLoading || isStreaming}
+            />
         </div>
     )
 }
-
-
-

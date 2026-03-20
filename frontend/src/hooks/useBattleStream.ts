@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { BattleEvent } from "@/lib/api/battles"
+import type { BattleEvent } from '@/lib/api/battles'
 
-import { consumeBattleStream, mergeBattleEvents } from "@/lib/battleUtils"
+import { consumeBattleStream, mergeBattleEvents } from '@/lib/battleUtils'
 
 export function useBattleStream({
     onBattleEvents,
@@ -19,6 +19,7 @@ export function useBattleStream({
 
     const onBattleEventsRef = useRef(onBattleEvents)
     const onStreamDoneRef = useRef(onStreamDone)
+    const streamInstanceRef = useRef(0)
 
     useEffect(() => {
         onBattleEventsRef.current = onBattleEvents
@@ -30,19 +31,32 @@ export function useBattleStream({
 
     const appendEventsForBattle = useCallback(
         (battleId: string, incomingEvents: BattleEvent[]) => {
-            setEventsByBattleId(prev => ({
-                ...prev,
-                [battleId]: mergeBattleEvents(prev[battleId] ?? [], incomingEvents)
-            }))
+            setEventsByBattleId(prev => {
+                const merged = mergeBattleEvents(prev[battleId] ?? [], incomingEvents)
+
+                if (merged === prev[battleId]) {
+                    return prev
+                }
+
+                return {
+                    ...prev,
+                    [battleId]: merged
+                }
+            })
         },
         []
     )
 
     useEffect(() => {
-        if (!selectedBattleId) return
+        if (!selectedBattleId) {
+            setIsStreaming(false)
+            setStreamError(null)
+            return
+        }
 
         const battleId = selectedBattleId
         const abortController = new AbortController()
+        const streamInstance = ++streamInstanceRef.current
 
         setIsStreaming(true)
         setStreamError(null)
@@ -50,14 +64,17 @@ export function useBattleStream({
         void consumeBattleStream({
             battleId,
             onBattleEvents: incomingEvents => {
+                if (streamInstanceRef.current !== streamInstance) return
                 appendEventsForBattle(battleId, incomingEvents)
                 onBattleEventsRef.current?.(incomingEvents)
             },
             onError: () => {
+                if (streamInstanceRef.current !== streamInstance) return
                 setIsStreaming(false)
                 setStreamError('Failed to stream battle events.')
             },
             onStreamDone: () => {
+                if (streamInstanceRef.current !== streamInstance) return
                 setIsStreaming(false)
                 onStreamDoneRef.current?.()
             },
@@ -76,4 +93,3 @@ export function useBattleStream({
         streamError
     }
 }
-
