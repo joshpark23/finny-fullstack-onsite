@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import asyncio
-import json
 from typing import List
 from uuid import uuid4
 
@@ -16,10 +17,21 @@ from battles.serializers import (
     serialize_battle_event,
 )
 from battles.services import run_battle_simulation
+from battles.streaming import (
+    get_battle_or_404,
+    get_client_ip,
+    stream_battle_events,
+    stream_connection_limiter,
+)
 from pokemon.models import Pokemon
 
 router = APIRouter(prefix="/battles", tags=["battles"])
 _running_simulation_tasks: set[asyncio.Task] = set()
+
+
+def _track_task(task: asyncio.Task) -> None:
+    _running_simulation_tasks.add(task)
+    task.add_done_callback(_running_simulation_tasks.discard)
 
 
 def _get_pokemon_or_404(pokemon_id: int) -> Pokemon:
@@ -41,29 +53,10 @@ def _build_pokemon_payload(pokemon: Pokemon) -> dict:
     }
 
 
-def _build_event_payload(event: BattleEvent) -> dict:
-    return {
-        "sequence": event.sequence,
-        "event_type": event.event_type,
-        "actor_pokemon_id": event.actor_pokemon_id,
-        "target_pokemon_id": event.target_pokemon_id,
-        "damage": event.damage,
-        "actor_hp_after": event.actor_hp_after,
-        "target_hp_after": event.target_hp_after,
-        "message": event.message,
-        "created_at": event.created_at.isoformat(),
-    }
-
-
-def _track_task(task: asyncio.Task) -> None:
-    _running_simulation_tasks.add(task)
-    task.add_done_callback(_running_simulation_tasks.discard)
-
-
-@router.post("", response_model=BattleCreatedResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "", response_model=BattleCreatedResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_battle(payload: BattleRequest) -> BattleCreatedResponse:
-    """Create and enqueue a battle simulation in the background."""
-
     if payload.pokemon1_id == payload.pokemon2_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -79,14 +72,13 @@ async def create_battle(payload: BattleRequest) -> BattleCreatedResponse:
     pokemon2 = _get_pokemon_or_404(payload.pokemon2_id)
 
     battle_id = str(uuid4())
-    battle = Battle(
+    Battle(
         battle_id=battle_id,
         pokemon1_id=payload.pokemon1_id,
         pokemon2_id=payload.pokemon2_id,
         status="running",
         idempotency_key=payload.idempotency_key,
-    )
-    battle.save()
+    ).save()
 
     task = asyncio.create_task(
         run_battle_simulation(
@@ -105,8 +97,6 @@ async def list_battles(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> List[BattleSummaryResponse]:
-    """List paginated battle history."""
-
     battles = (
         Battle.objects(
             status__in=["running", "completed", "failed"],
@@ -123,15 +113,7 @@ async def list_battles(
 
 @router.get("/{battle_id}", response_model=BattleDetailResponse)
 async def get_battle(battle_id: str) -> BattleDetailResponse:
-    """Get battle result with full event history."""
-
-    battle = Battle.objects(battle_id=battle_id).first()
-    if battle is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Battle not found",
-        )
-
+    battle = get_battle_or_404(battle_id)
     events = BattleEvent.objects(battle_id=battle_id).order_by("sequence")
     return BattleDetailResponse(
         **serialize_battle(battle).model_dump(),
@@ -141,46 +123,23 @@ async def get_battle(battle_id: str) -> BattleDetailResponse:
 
 @router.get("/{battle_id}/stream")
 async def stream_battle(battle_id: str, request: Request) -> StreamingResponse:
-    """Stream stored battle events as Server-Sent Events."""
+    get_battle_or_404(battle_id)
+    client_ip = get_client_ip(request)
 
-    battle = Battle.objects(battle_id=battle_id).first()
-    if battle is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Battle not found",
-        )
+    async def guarded_event_generator():
+        async with stream_connection_limiter.acquire(client_ip):
+            async for chunk in stream_battle_events(
+                battle_id=battle_id, request=request
+            ):
+                yield chunk
 
-    async def event_generator():
-        last_sequence = 0
-        while True:
-            if await request.is_disconnected():
-                break
-
-            fresh_events = BattleEvent.objects(
-                battle_id=battle_id, sequence__gt=last_sequence
-            ).order_by("sequence")
-            for event in fresh_events:
-                payload = _build_event_payload(event)
-                last_sequence = event.sequence
-                yield f"event: {event.event_type}\ndata: {json.dumps(payload)}\n\n"
-
-            battle.reload()
-            if battle.status in {"completed", "failed"}:
-                trailing_events = BattleEvent.objects(
-                    battle_id=battle_id, sequence__gt=last_sequence
-                ).order_by("sequence")
-                for event in trailing_events:
-                    payload = _build_event_payload(event)
-                    last_sequence = event.sequence
-                    yield f"event: {event.event_type}\ndata: {json.dumps(payload)}\n\n"
-
-                final_event_type = "complete" if battle.status == "completed" else "failed"
-                yield (
-                    f"event: {final_event_type}\n"
-                    f'data: {json.dumps({"battle_id": battle_id, "status": battle.status})}\n\n'
-                )
-                break
-
-            await asyncio.sleep(0.25)
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        guarded_event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

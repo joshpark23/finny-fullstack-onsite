@@ -40,7 +40,7 @@ export function BattleEventsList({
                     <Card className="gap-2 px-4 py-3" key={eventKey(event)}>
                         <div className="text-sm font-medium">{event.message}</div>
                         <div className="text-xs text-muted-foreground">
-                            {event.event_type} • {new Date(event.created_at).toLocaleString()}
+                            {new Date(event.created_at).toLocaleString()}
                         </div>
                     </Card>
                 ))}
