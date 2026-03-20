@@ -161,7 +161,7 @@ export default function CollectionList() {
                             </div>
                         </div>
                         <div className="text-sm text-muted-foreground">
-                            HP {pokemon.hp} / ATK {pokemon.attack}
+                            HP {pokemon.hp} / ATK {pokemon.attack} / DEF {pokemon.defense} / SPD {pokemon.speed}
                         </div>
                     </Card>
                 ))}

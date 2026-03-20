@@ -8,6 +8,7 @@ import type { Pokemon } from '@/lib/api/pokemon'
 import { useDebounce } from '@/hooks/useDebounce'
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
 import { usePokemonCatalog } from '@/hooks/usePokemonCatalog'
+import { usePokemonCollection } from '@/hooks/usePokemonCollection'
 import { savePokemonToCollection } from '@/lib/api/pokemon'
 import { getTypeColor } from '@/lib/pokemonUtils'
 
@@ -35,6 +36,20 @@ export default function PokemonGrid() {
         isLoading
     } = usePokemonCatalog()
 
+    const { data: savedCollection = [] } = usePokemonCollection()
+
+    const savedIds = useMemo(() => new Set(savedCollection.map(p => p.id)), [savedCollection])
+
+    useEffect(() => {
+        setSelectedPokemonIds(prev => {
+            const next = new Set(prev)
+            for (const id of Array.from(next)) {
+                if (savedIds.has(id)) next.delete(id)
+            }
+            return next
+        })
+    }, [savedIds])
+
     useEffect(() => {
         setVisibleCount(PAGE_SIZE)
     }, [normalizedSearch])
@@ -60,13 +75,14 @@ export default function PokemonGrid() {
         })
     }, [allPokemon, normalizedSearch])
 
+    const nonSavedFiltered = filteredPokemon.filter(p => !savedIds.has(p.id))
     const hasNextPage = visibleCount < filteredPokemon.length
     const pokemon: Pokemon[] = filteredPokemon.slice(0, visibleCount)
     const isFetchingNextPage = isFetching && !isLoading
     const hasSelections = selectedPokemonIds.size > 0
     const allFilteredSelected =
-        filteredPokemon.length > 0 &&
-        filteredPokemon.every(p => selectedPokemonIds.has(p.id))
+        nonSavedFiltered.length > 0 &&
+        nonSavedFiltered.every(p => selectedPokemonIds.has(p.id))
 
     const loadMoreRef = useInfiniteScroll({
         enabled: hasNextPage,
@@ -91,7 +107,7 @@ export default function PokemonGrid() {
     const handleToggleSelectAll = (checked: boolean) => {
         setSelectedPokemonIds(prev => {
             const next = new Set(prev)
-            const filteredIds = filteredPokemon.map(p => p.id)
+            const filteredIds = nonSavedFiltered.map(p => p.id)
             if (checked) {
                 filteredIds.forEach(id => next.add(id))
             } else {
@@ -129,6 +145,7 @@ export default function PokemonGrid() {
                         <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                             <input
                                 checked={allFilteredSelected}
+                                disabled={nonSavedFiltered.length === 0}
                                 onChange={e => handleToggleSelectAll(e.target.checked)}
                                 type="checkbox"
                             />
@@ -174,6 +191,7 @@ export default function PokemonGrid() {
                             <label className="inline-flex items-center">
                                 <input
                                     checked={selectedPokemonIds.has(p.id)}
+                                    disabled={savedIds.has(p.id)}
                                     onChange={e =>
                                         togglePokemonSelection(p.id, e.target.checked)
                                     }
@@ -194,7 +212,7 @@ export default function PokemonGrid() {
                             </div>
                         </div>
                         <div className="text-sm text-muted-foreground">
-                            HP {p.hp} / ATK {p.attack}
+                            HP {p.hp} / ATK {p.attack} / DEF {p.defense} / SPD {p.speed}
                         </div>
                     </Card>
                 ))}
