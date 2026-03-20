@@ -2,7 +2,7 @@
 
 import type { Pokemon } from '@/lib/api/pokemon'
 
-import { usePokemonCatalog } from '@/hooks/usePokemonInfinite'
+import { usePokemonCatalog } from '@/hooks/usePokemonCatalog'
 
 
 export function PokemonSelectors({

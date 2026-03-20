@@ -7,7 +7,7 @@ import type { Pokemon } from '@/lib/api/pokemon'
 
 import { useDebounce } from '@/hooks/useDebounce'
 import { useInfiniteScroll } from '@/hooks/useInfiniteScroll'
-import { usePokemonCatalog } from '@/hooks/usePokemonInfinite'
+import { usePokemonCatalog } from '@/hooks/usePokemonCatalog'
 import { savePokemonToCollection } from '@/lib/api/pokemon'
 import { getTypeColor } from '@/lib/pokemonUtils'
 
