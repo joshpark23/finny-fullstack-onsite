@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pokemon_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      MONGODB_URL: mongodb://mongodb:27017
+      DATABASE_NAME: pokemon_db
+      REDIS_URL: redis://redis:6379
+      RATE_LIMITER_METHOD: lua  # Options: lua, watch
+      LOG_LEVEL: INFO
+    depends_on:
+      mongodb:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    networks:
+      - pokemon_network
+    volumes:
+      - .:/app  # Mount for development (hot reload)
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  mongodb:
+    image: mongo:7.0
+    container_name: pokemon_mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      # No authentication for development setup
+      # MONGO_INITDB_ROOT_USERNAME: admin
+      # MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: pokemon_db
+    volumes:
+      - mongodb_data:/data/db
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    networks:
+      - pokemon_network
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: pokemon_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - pokemon_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: MongoDB Express for database management UI
+  mongo-express:
+    image: mongo-express:latest
+    container_name: pokemon_mongo_express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongodb:27017/
+      ME_CONFIG_BASICAUTH: false
+    depends_on:
+      - mongodb
+    networks:
+      - pokemon_network
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  pokemon_network:
+    driver: bridge 
